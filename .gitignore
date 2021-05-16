@@ -1,0 +1,34 @@
+
+#Databases
+
+*.sqlite3
+
+
+
+src/media/*.xlsx
+src/media/*.xml
+
+__pycache__/
+*.py[cod]
+*$py.class
+temp/input/*.xlsx
+temp/output/*.xlsx
+#vscode's stuff
+.vscode/
+
+# C extensions
+*.so
+
+
+
+# celery beat schedule file
+celerybeat-schedule
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+.vscode/
