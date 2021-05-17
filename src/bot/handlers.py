@@ -17,10 +17,9 @@ class TelegramChannelHandler(Handler):
             from bot.management.commands.start_bot import bot
 
             msg = self.format(record)
-
             if bot:
-                result = bot.updater.bot.send_message(
-                    self.channel_id,
+                bot.updater.bot.send_message(
+                    chat_id=self.channel_id,
                     text=msg,
                 )
 

@@ -97,8 +97,16 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 """ Telegram bot settings
 """
-LIST_OF_ADMINS = os.getenv("LIST_OF_ADMIN", "").split(";")
+
+LIST_OF_ADMINS = [
+    int(x)
+    for x in os.getenv("LIST_OF_ADMINS", "").split(
+        ";"
+    )  # Load list of admin users ids and cast them into int
+]
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_LOG_CHANNEL_ID = os.getenv("TELEGRAM_LOG_CHANNEL_ID")
+
 
 """Logging
 """
@@ -114,7 +122,7 @@ LOGGING = {
         "bot_handler": {
             "class": "bot.handlers.TelegramChannelHandler",
             "formatter": "verbose",
-            "channel_id": os.getenv("TELEGRAM_CHANNEL_ID"),
+            "channel_id": TELEGRAM_LOG_CHANNEL_ID,
         },
     },
     "formatters": {

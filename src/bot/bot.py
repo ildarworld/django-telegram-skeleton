@@ -8,9 +8,11 @@ from django.contrib.auth.models import User
 from django.core.exceptions import ObjectDoesNotExist
 from django.utils.translation import gettext_lazy as _
 from django.contrib.auth import get_user_model
+
 from telegram import ParseMode
 from telegram import User as TelegramUser
 from telegram.error import BadRequest
+from telegram.error import Unauthorized
 from telegram.ext import Updater, CommandHandler
 from telegram.utils.helpers import mention_html
 
@@ -20,7 +22,10 @@ from bot.handlers import TelegramChannelHandler
 
 import logging
 
+
 log = logging.getLogger("bot")
+
+SEND_TO_ALL_COMMAND = "sendtoall"
 
 
 class Bot:
@@ -43,6 +48,9 @@ class Bot:
     def _register_handlers(self):
         self.dispatcher.add_handler(CommandHandler("start", self.start))
         self.dispatcher.add_handler(CommandHandler("users_number", self.users_number))
+        self.dispatcher.add_handler(
+            CommandHandler(SEND_TO_ALL_COMMAND, self.send_message_to_all_partners)
+        )
         self.dispatcher.add_error_handler(self.error)
 
     def _start_polling(self):
@@ -61,9 +69,11 @@ class Bot:
             #  Here some come to proccess start behaviour for new user
         else:
             self._update_user(profile, tg_user)
-            log.info("Existing user has sent message")
+            log.info("Existing user has sent START message")
             #  Here some come to proccess start behaviour for exist user
-        update.message.reply_text(_(f"Hello {tg_user.username}"))
+        update.message.reply_text(
+            _(f"Hello {tg_user.username}"),
+        )
 
     """ Creating django user as well as Telegram Profile
     """
@@ -94,6 +104,7 @@ class Bot:
         profile.first_name = tg_user.first_name
         profile.last_name = tg_user.last_name
         profile.username = tg_user.username
+        profile.active = True
         profile.save()
 
     @restricted
@@ -108,7 +119,6 @@ class Bot:
         )
 
     def error(self, update, context):
-        log.error(_("Error happened in bot"))
         trace = "".join(traceback.format_tb(sys.exc_info()[2]))
         payload = ""
         if not update:
@@ -122,9 +132,58 @@ class Bot:
         if update.poll:
             payload += f" with the poll id {update.poll.id}."
         text = _(
-            f"Hey.\n The error <code>{context.error}</code> happened{payload}. The full traceback:\n\n<code>{trace}"
-            f"</code>"
+            f"\nThe error <code>{context.error}</code> happened{payload}. The full traceback:\n\n<code>{trace}"
+            "</code>"
+        )
+        self.updater.bot.send_message(
+            settings.TELEGRAM_LOG_CHANNEL_ID,
+            text=text,
+            parse_mode=ParseMode.HTML,
         )
 
-        for dev_id in settings.LIST_OF_ADMINS:
-            context.bot.send_message(dev_id, text, parse_mode=ParseMode.HTML)
+    @restricted
+    def send_message_to_all_partners(self, update, context):
+
+        i = 1
+        message_text = update.message.text.replace("/" + SEND_TO_ALL_COMMAND, "")
+        number_of_active_users = Profile.objects.filter(active=True).count()
+
+        """ Send message only for active users 
+        """
+        for profile in Profile.objects.filter(active=True):
+            log.info(
+                f"Sending message {i} out of {number_of_active_users} to {profile.tg_user_id}"
+            )
+            self._send_message_to_partner(profile, message_text, context)
+            i += 1
+
+    def _send_message_to_partner(self, profile: Profile, message: str, context):
+        ATTEMPT_COUNT = 3  # only three attempts to reach user in case of BadRequest
+        sleep_time = 1  # sleep time
+        current_attempt = 1
+        while current_attempt <= ATTEMPT_COUNT:
+            try:
+                context.bot.send_message(
+                    profile.tg_user_id,
+                    text=message,
+                )
+            except Unauthorized as ex:
+                """Deactivating user which is not accessable through send message"""
+                profile.active = False
+                profile.save()
+                log.info(
+                    "Unauthorized  error in sending message to profile with Error {extype} {ex}".format(
+                        extype=type(ex),
+                        ex=ex,
+                    )
+                )
+                break
+            except BadRequest:
+                log.info(
+                    f"Bad request for {profile.tg_user_id} attempt number {current_attempt}"
+                )
+                time.sleep(sleep_time)
+                sleep_time += 1
+                current_attempt += 1
+            else:
+                break
